@@ -128,37 +128,3 @@ Connect as `pageturn_app` in Oracle SQL Developer or SQL*Plus and run the files 
    ```bash
    npm run build
    ```
-
----
-
-## 6. MCA Viva / Academic Explanation Guide
-
-### Q1: Why is business logic implemented in PL/SQL instead of Express routes?
-**Answer**: Centralizing critical business rules (such as inventory copy decrements, member status checks, and return verifications) inside Oracle PL/SQL ensures data integrity across any application layer. Even if multiple services or scripts interact with the database, business rules cannot be bypassed.
-
-### Q2: How does `LIBRARY_PKG.ISSUE_BOOK` handle concurrency and prevent overselling?
-**Answer**: When issuing a book, `LIBRARY_PKG` executes:
-```sql
-SELECT title, available_copies, total_copies
-  INTO v_book_title, v_available_copies, v_total_copies
-  FROM BOOKS
- WHERE book_id = p_book_id
-   FOR UPDATE;
-```
-The `FOR UPDATE` clause places an exclusive row-level lock on the book record. If two users concurrently attempt to borrow the final copy, the second transaction is queued until the first completes. When the second transaction acquires the lock, it reads `available_copies = 0` and `LIBRARY_PKG` immediately raises `RAISE_APPLICATION_ERROR(-20001, 'No available copies left')`.
-
-### Q3: How is double-returning prevented?
-**Answer**: In `LIBRARY_PKG.RETURN_BOOK`, the issue record is selected `FOR UPDATE`. If `status = 'RETURNED'`, the procedure raises `RAISE_APPLICATION_ERROR(-20002)`. Otherwise, `return_date` is set to `SYSDATE`, `status` is updated to `'RETURNED'`, and `available_copies` on `BOOKS` is safely incremented up to `total_copies` using `LEAST(total_copies, available_copies + 1)`.
-
-### Q4: How does Node.js connect to Oracle without installing Oracle Instant Client?
-**Answer**: We use `oracledb` 6+ in default **Thin Mode**. Thin mode is implemented in 100% pure JavaScript and communicates directly over TCP/IP using the Oracle Net protocol, eliminating the need to install or configure Oracle Client binary packages.
-
-### Q5: What database constraints are enforced at the schema level?
-**Answer**:
-- `chk_books_total_copies`: `CHECK (total_copies >= 1)`
-- `chk_books_avail_copies`: `CHECK (available_copies >= 0)`
-- `chk_books_avail_le_total`: `CHECK (available_copies <= total_copies)`
-- `chk_members_status`: `CHECK (status IN ('ACTIVE', 'SUSPENDED', 'INACTIVE'))`
-- `chk_issues_status`: `CHECK (status IN ('ISSUED', 'RETURNED', 'OVERDUE'))`
-- `chk_issues_due_date`: `CHECK (due_date >= issue_date)`
-- Foreign keys with `ON DELETE CASCADE` linking `ISSUE_RECORDS` to `BOOKS` and `MEMBERS`.
